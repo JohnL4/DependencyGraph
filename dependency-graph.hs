@@ -40,6 +40,11 @@ import Text.Regex.TDFA
 -- import qualified Data.Map.Lazy as Map
 import qualified Data.Map.Strict as Map
 
+---------------------------------------------------------------- Test Data
+l1 = "    Helios.MigrationTool.Common.AssemblyUtils.GetAssemblyList() Information: 0 : Processing SXA.Compass.Config.ViewModel.dll\tin C:\\Program Files (x86)\\Allscripts Sunrise\\Clinical Manager Client\\7.2.5575.0\\"
+l2 = "    Helios.MigrationTool.Common.AssemblyUtils.GetAssemblyList() Information: 0 : Adding C:\\Program Files (x86)\\Allscripts Sunrise\\Clinical Manager Client\\7.2.5575.0\\SXA.Compass.Config.ViewModel.dll\t(IsPresent=true)\tto assemblyList at beginning of GetAssemblyListEx()"
+l3 = "      Helios.MigrationTool.Common.AssemblyUtils.GetAssemblyList() Information: 0 : Processing SXA.Compass.Config.Utils.dll\tin C:\\Program Files (x86)\\Allscripts Sunrise\\Clinical Manager Client\\7.2.5575.0\\"
+---------------------------------------------------------------- Test Data Ends
 -- See http://stackoverflow.com/q/32149354/370611
 -- toRegex = makeRegexOpts defaultCompOpt{multiline=False} defaultExecOpt
 
@@ -53,34 +58,72 @@ import qualified Data.Map.Strict as Map
 
 -- |Regex matching line to be parsed
 parseLineRegex :: String
-parseLineRegex = "^( *)(.* Information: 0 : Processing )([^ ]*)[ \t]"
+parseLineRegex = "^( *)(.* Information: 0 : Processing )([^ ]*)[ \t]+in (.*)" -- 4 subexpressions
 
 main :: IO()
 main = do
   logContents <- getContents
-  putStrLn $ unlines $ edges Map.empty $ lines logContents
+  putStrLn $ unlines $ edges (lines logContents) Map.empty
 
+----------------------------------------------------------------
 -- |Returns a list of strings describing edges in the form "a -> b /* comment */"
-edges :: Map.Map String Integer -- ^ Map of edges in form "a -> b" with a count of the number of times that edge occurs
-  -> [String]                   -- ^ Input lines of text
-  -> [String]                   -- ^ Output list of edge descriptions
-
-edges edgeSet [] =
+edges :: 
+  [String]              -- ^ Input lines of text
+  -> Map.Map String Int -- ^ Map of edges in form "a -> b" with a count of the number of times that edge occurs
+  -> [String]           -- ^ Output list of edge descriptions
+  
+edges [] edgeSet =
   edgeDump $ Map.assocs edgeSet
   
-edges edgeSet (logLine:logLines) =
-  let fields = logLine =~ parseLineRegex :: (String,String,String,[String])
+edges (lastLine:[]) edgeSet =
+  edgeDump $ Map.assocs edgeSet
+  
+edges (fstLogLine:sndLogLine:logLines) edgeSet =
+  let fstFields = fstLogLine =~ parseLineRegex :: (String,String,String,[String])
+      sndFields = sndLogLine =~ parseLineRegex :: (String,String,String,[String])
   in
-    
-    ((">" ++ ((fourth fields) !! 0) ++ "<") ++ logLine):logLines
+    if length (fourth fstFields) == 0
+    then error ("Unmatched: " ++ (first fstFields))
+    else if length (fourth sndFields) == 0 -- "Adding", not "Processing"
+    then edges (fstLogLine:logLines) edgeSet
+    else if indentLength fstFields < indentLength sndFields
+    then edges (fstLogLine:logLines) (Map.insertWith (+) (fullname fstFields ++ " -> " ++ fullname sndFields) 1 edgeSet)
+    else edges (sndLogLine:logLines) edgeSet
 
+    -- ((">" ++ ((fourth fstFields) !! 0) ++ "<") ++ fstLogLine):logLines
+
+----------------------------------------------------------------
+fullname :: (String,String,String,[String]) -> String
+fullname (_,_,_,[_,_,fileName,directoryName]) = directoryName ++ fileName
+
+----------------------------------------------------------------
+-- |Edges from the first line to all following lines
+edgesFrom :: String             -- ^ First line
+  -> [String]                   -- ^ Following lines
+  -> Map.Map String Int         -- ^ Set of edges built so far
+  -> [String]
+edgesFrom a b c = []
+
+----------------------------------------------------------------
+-- |Return length of indent or error
+indentLength :: (String,String,String,[String]) -- ^ Regex match context
+  -> Int                                        -- ^ Length of indent
+indentLength (prefix,_,_,[]) = error $ "Not matched: " ++ prefix
+indentLength (_,_,_,subexprs) =
+  length $ subexprs !! 0
+
+----------------------------------------------------------------
 -- |Returns a list of edges, possibly with comments indicating occurrence counts > 1
-edgeDump :: [(String,Integer)]  -- ^ List of (edge,count) tuples
-  -> [String]                   -- ^ List of edges, possibly w/comments
+edgeDump :: [(String,Int)]     -- ^ List of (edge,count) tuples
+  -> [String]                  -- ^ List of edges, possibly w/comments
 edgeDump [] = []
 edgeDump ((edge,count):rest)
   | count <= 1  = edge:(edgeDump rest)
   | otherwise   = (edge ++ " /* " ++ (show count) ++ " occurrences */"):(edgeDump rest)
+
+----------------------------------------------------------------
+first :: (a,b,c,d) -> a
+first (x,_,_,_) = x
 
 fourth :: (a,b,c,d) -> d
 fourth (_,_,_,x) = x
