@@ -1,0 +1,12 @@
+* DependencyGraph
+
+  An attempt to write a Haskell pgm that turns indented text log output into a GraphViz dependency
+  graph.
+
+  I haven't figured out how to make this work, since the "Adding" lines (see file [[file:test2.txt][test2.txt]]) occur
+  non-deterministically.  That means you can't drop the same number lines as the number of edges you
+  generate.
+
+  Maybe the fix is to try something like =takeWhile=, but then the condition has be basically "until
+  indent decreases again".
+  

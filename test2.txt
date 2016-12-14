@@ -1,6 +1,6 @@
 x Information: 0 : Processing f1 in d\
   x Information: 0 : Processing f2 in d\
-    x Information: 0 : Adding f3 in d\
+  x Information: 0 : Adding f3 in d\
     x Information: 0 : Processing f3 in d\
   x Information: 0 : Processing f4 in d\
     x Information: 0 : Processing f5 in d\
