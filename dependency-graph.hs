@@ -63,21 +63,22 @@ parseLineRegex = "^( *)(.* Information: 0 : Processing )([^ ]*)[ \t]+in (.*)" --
 main :: IO()
 main = do
   logContents <- getContents
-  putStrLn $ unlines $ edges (lines logContents) Map.empty
+  putStrLn $ unlines $ fst $ edges (lines logContents) Map.empty
 
 ----------------------------------------------------------------
 -- |Returns a list of strings describing edges in the form "a -> b /* comment */"
 edges :: 
   [String]              -- ^ Input lines of text
   -> Map.Map String Int -- ^ Map of edges in form "a -> b" with a count of the number of times that edge occurs
-  -> [String]           -- ^ Output list of edge descriptions
+  -> ([String],         -- ^ Output list of edge descriptions
+      Int)              -- ^ Number of lines processed
   
 edges [] edgeSet =
-  edgeDump $ Map.assocs edgeSet
+  (edgeDump $ Map.assocs edgeSet, 0)
   
 edges (lastLine:[]) edgeSet =
-  edgeDump $ Map.assocs edgeSet
-  
+  (edgeDump $ Map.assocs edgeSet, 1)
+
 edges (fstLogLine:sndLogLine:logLines) edgeSet =
   let fstFields = fstLogLine =~ parseLineRegex :: (String,String,String,[String])
       sndFields = sndLogLine =~ parseLineRegex :: (String,String,String,[String])
@@ -85,12 +86,18 @@ edges (fstLogLine:sndLogLine:logLines) edgeSet =
     if length (fourth fstFields) == 0
     then error ("Unmatched: " ++ (first fstFields))
     else if length (fourth sndFields) == 0 -- "Adding", not "Processing"
-    then edges (fstLogLine:logLines) edgeSet
-    else if indentLength fstFields < indentLength sndFields
-    then edges (fstLogLine:logLines) (Map.insertWith (+) (fullname fstFields ++ " -> " ++ fullname sndFields) 1 edgeSet)
-    else edges (sndLogLine:logLines) edgeSet
-
-    -- ((">" ++ ((fourth fstFields) !! 0) ++ "<") ++ fstLogLine):logLines
+    then edges (fstLogLine:logLines) edgeSet -- Skip useless line
+    else if indentLength fstFields >= indentLength sndFields
+    then edges (sndLogLine:logLines) edgeSet -- Can't be an edge from first to second line; drop first line and keep going.
+    else ((fst $ edges (sndLogLine:logLines) edgeSet)
+           ++ (fst $ edges (fstLogLine:(drop
+                                        (snd $ edges (sndLogLine:logLines) edgeSet) -- # of lines processed
+                                        logLines)) edgeSet),
+          (snd $ edges (sndLogLine:logLines) edgeSet)
+          + (snd $ edges (fstLogLine:(drop
+                                      (snd $ edges (sndLogLine:logLines) edgeSet) -- # of lines processed
+                                      logLines)) edgeSet)
+         )
 
 ----------------------------------------------------------------
 fullname :: (String,String,String,[String]) -> String
