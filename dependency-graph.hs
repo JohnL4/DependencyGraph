@@ -58,20 +58,25 @@ l3 = "      Helios.MigrationTool.Common.AssemblyUtils.GetAssemblyList() Informat
 
 -- |Regex matching line to be parsed
 parseLineRegex :: String
-parseLineRegex = "^( *)(.* Information: 0 : Processing )([^ ]*)[ \t]+in (.*)" -- 4 subexpressions
+parseLineRegex = "^(.* Information: 0 : Processing )([^ ]*)[ \t]+in (.*)" -- 3subexpressions
 
 main :: IO()
 main = do
   logContents <- getContents
-  putStrLn $ unlines $ fst $ edges (lines logContents) Map.empty
+  putStrLn $ unlines $ fst $ edges (parseIndent $ lines logContents) Map.empty
+
+----------------------------------------------------------------
+-- |Parses out the leading indentation of the given String into a string of spaces and the rest of the line
+parseIndent :: String -> (String,String)
+parseIndent s = ((fourth $ (s =~ "^( *)(.*)" :: (String,String,String,[String]))) !! 0,
+                 (fourth $ (s =~ "^( *)(.*)" :: (String,String,String,[String]))) !! 1)
 
 ----------------------------------------------------------------
 -- |Returns a list of strings describing edges in the form "a -> b /* comment */"
 edges :: 
-  [String]              -- ^ Input lines of text
+  [(String,String)]             -- ^ Input tuples: (indent, restOfString)
   -> Map.Map String Int -- ^ Map of edges in form "a -> b" with a count of the number of times that edge occurs
-  -> ([String],         -- ^ Output list of edge descriptions
-      Int)              -- ^ Number of lines processed
+  -> [String]           -- ^ Output list of edge descriptions in form "a -> b optionalExtraText"
   
 edges [] edgeSet =
   (edgeDump $ Map.assocs edgeSet, 0)
@@ -79,16 +84,57 @@ edges [] edgeSet =
 edges (lastLine:[]) edgeSet =
   (edgeDump $ Map.assocs edgeSet, 1)
 
-edges (fstLogLine:sndLogLine:logLines) edgeSet =
-  let fstFields = fstLogLine =~ parseLineRegex :: (String,String,String,[String])
-      sndFields = sndLogLine =~ parseLineRegex :: (String,String,String,[String])
+edges (fstLogLine:sndLogLine:[]) edgeSet =
+  let fstFields = (snd fstLogLine) =~ parseLineRegex :: (String,String,String,[String])
+      sndFields = (snd sndLogLine) =~ parseLineRegex :: (String,String,String,[String])
   in
     if length (fourth fstFields) == 0
-    then error ("Unmatched: " ++ (first fstFields))
+    then error ("Unmatched: " ++ (first fstFields)) -- First line must always match
     else if length (fourth sndFields) == 0 -- "Adding", not "Processing"
-    then edges (fstLogLine:logLines) edgeSet -- Skip useless line
-    else if indentLength fstFields >= indentLength sndFields
+    then edges (fstLogLine:[]) edgeSet -- Skip useless line
+    else if indentLength fstLogLine >= indentLength sndLogLine
+    then edges (sndLogLine:[]) edgeSet -- Can't be an edge from first to second line; drop first line and keep going.
+    else edges (sndLogLine:[])
+         (Map.insertWith (+) ((fullName fstFields) ++ (fullName sndFields)) 1)
+  
+edges (fstLogLine:sndLogLine:thdLogLine:logLines) edgeSet =
+  let fstFields = (snd fstLogLine) =~ parseLineRegex :: (String,String,String,[String])
+      sndFields = (snd sndLogLine) =~ parseLineRegex :: (String,String,String,[String])
+      thdFields = (snd thdLogLine) =~ parseLineRegex :: (String,String,String,[String])
+  in
+    if length (fourth fstFields) == 0
+    then error ("Unmatched: " ++ (first fstFields)) -- First line must always match
+
+    else if length (fourth sndFields) == 0 -- "Adding", not "Processing"
+    then edges (fstLogLine:thdLogLine:logLines) edgeSet -- Skip useless line
+
+    else if indentLength fstLogLine >= indentLength sndLogLine
+    then []                     -- Stop processing at outdent
+
+    else
+      -- Looking one of:
+      --       1
+      --          2 -- process 1 -> 2, then process 2.. as subtree
+      --             3 -- Need to process as subtree rooted at 2, then drop subtree (zero or more lines at same level as 3)
+      -- or
+      --       1
+      --          2 -- processs, then drop this line (process 2.. as empty subtree?)
+      --          3
+      -- or
+      --       1
+      --          2 -- process, then drop this line (drop entire subtree rooted at 1) (same as above, drop empty subtree? (2))
+      --       3
+      -- or
+      --       1
+      --          2 -- same as above? Drop empty subtree rooted at 2
+      --    3
+      edges (sndLogLine:thdLogLine:logLines) (Map.insertWith (+) ((fullName fstFields) ++ (fullName sndFields)) 1) -- now what? I need to pass the UPDATED edgeSet on to the next call, after the subtree rooted at 2 is dropped.
+      
+      
+
     then edges (sndLogLine:logLines) edgeSet -- Can't be an edge from first to second line; drop first line and keep going.
+    else edges (sndLogLine:(takeWhile (increasingIndent $ length $ fst fstLogLine) logLines))
+         (Map.insertWith (+) ((fullName fstFields) ++ (fullName sndFields)) 1)
     else ((fst $ edges (sndLogLine:logLines) edgeSet)
            ++ (fst $ edges (fstLogLine:(drop
                                         (snd $ edges (sndLogLine:logLines) edgeSet) -- # of lines processed
@@ -101,7 +147,7 @@ edges (fstLogLine:sndLogLine:logLines) edgeSet =
 
 ----------------------------------------------------------------
 fullname :: (String,String,String,[String]) -> String
-fullname (_,_,_,[_,_,fileName,directoryName]) = directoryName ++ fileName
+fullname (_,_,_,[_,fileName,directoryName]) = directoryName ++ fileName
 
 ----------------------------------------------------------------
 -- |Edges from the first line to all following lines

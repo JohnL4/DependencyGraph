@@ -9,4 +9,100 @@
 
   Maybe the fix is to try something like =takeWhile=, but then the condition has be basically "until
   indent decreases again".
+
+* Sample Run
+
+  #+BEGIN_EXAMPLE
+    a
+      b
+      c
+      d   \
+        e  \__ 1: process, drop 
+        f  /                   
+      g                        
+      h                        
+        i                      
+        j   \ 
+          k  \__ 2: process, drop
+          m  /
+          n /
+      q
+        d -- repeated subtree
+          e
+          f
+      r
+        s
+        t
+    u
+    v
+      w
+      x
+  #+END_EXAMPLE
+  
+  So, we process:
+
+  - a -> b (indented)
+  - a -> c (indent continues)
+  - a -> d (indent continues)
+    - d -> e (indented again? 3rd line indented?)
+    - d -> f
+  - drop subtree starting with d
+  - a -> g
+  - a -> h
+    - h -> i
+    - h -> j
+      - j -> k
+      - j -> m
+      - j -> n
+    - drop subtree starting with j
+  - drop subtree starting with h
+  - a -> q
+    - q -> d
+      - d -> e -- duplicated, so append comment or highlight in red or whatever, e.g., "[color=red]"
+      - d -> f -- duplicated, so append comment or highlight in red or whatever
+  - a -> r
+    - r -> s
+    - r -> t
+  - drop subtree starting with r
+  - drop subtree starting with a
+  - (there is no edge ending at u)
+  - drop u
+  - v -> w
+  - v -> x
+    
+* Question for people who are better at functional programming than I am
+
+  I thought, for grins, I'd try to turn some log output into a dependency graph (using GraphViz's
+  =dot(1)=).  I'm having difficulty forcing my stateful paradigm into a functional one, so I need
+  some help.
+
+  If I was to do this with an imperative (stateful) language, I'd build a set of edges (or a map to
+  a frequency count, really, since I'll use =freq > 1= to add some output text noting the repeated
+  occurrences), and then dump out the set elements to a text file that would look something like
+  this fragment:
+
+  #+BEGIN_EXAMPLE
+    a -> q
+    q -> d
+    d -> e [color=red]
+    d -> f [color=red
+  #+END_EXAMPLE 
+  
+  My big problem now is that if I subtree that looks like:
+
+  #+BEGIN_EXAMPLE
+    a
+      b
+        c
+        d
+      b
+        d
+        e
+  #+END_EXAMPLE
+
+  my current plan is to proces the first b-c-d subtree and then process the b-d-e subtree, /BUT/ I
+  need to pass the updated edge set to the second processing call, which is pretty stateful.
+
+  Do I need to just bite the bullet and find some succinct way to do that, or is my entire approach
+  just wrong, stuck in my stateful mindset?
   
