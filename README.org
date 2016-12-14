@@ -88,7 +88,7 @@
     d -> f [color=red
   #+END_EXAMPLE 
   
-  My big problem now is that if I subtree that looks like:
+  My big problem now is that if I process a subtree that looks like:
 
   #+BEGIN_EXAMPLE
     a
