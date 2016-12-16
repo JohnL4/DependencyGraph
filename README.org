@@ -3,13 +3,6 @@
   An attempt to write a Haskell pgm that turns indented text log output into a GraphViz dependency
   graph.
 
-  I haven't figured out how to make this work, since the "Adding" lines (see file [[file:test2.txt][test2.txt]]) occur
-  non-deterministically.  That means you can't drop the same number lines as the number of edges you
-  generate.
-
-  Maybe the fix is to try something like =takeWhile=, but then the condition has be basically "until
-  indent decreases again".
-
 * Sample Run
 
   #+BEGIN_EXAMPLE
@@ -70,39 +63,3 @@
   - v -> w
   - v -> x
     
-* Question for people who are better at functional programming than I am
-
-  I thought, for grins, I'd try to turn some log output into a dependency graph (using GraphViz's
-  =dot(1)=).  I'm having difficulty forcing my stateful paradigm into a functional one, so I need
-  some help.
-
-  If I was to do this with an imperative (stateful) language, I'd build a set of edges (or a map to
-  a frequency count, really, since I'll use =freq > 1= to add some output text noting the repeated
-  occurrences), and then dump out the set elements to a text file that would look something like
-  this fragment:
-
-  #+BEGIN_EXAMPLE
-    a -> q
-    q -> d
-    d -> e [color=red]
-    d -> f [color=red
-  #+END_EXAMPLE 
-  
-  My big problem now is that if I process a subtree that looks like:
-
-  #+BEGIN_EXAMPLE
-    a
-      b
-        c
-        d
-      b
-        d
-        e
-  #+END_EXAMPLE
-
-  my current plan is to proces the first b-c-d subtree and then process the b-d-e subtree, /BUT/ I
-  need to pass the updated edge set to the second processing call, which is pretty stateful.
-
-  Do I need to just bite the bullet and find some succinct way to do that, or is my entire approach
-  just wrong, stuck in my stateful mindset?
-  
