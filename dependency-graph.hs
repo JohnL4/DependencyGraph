@@ -140,7 +140,12 @@ newState state curLine
     =
 --       trace ("same level")
       State { stack = (curLine:(tail $ stack state)), -- pop one
-              edges = (Map.insertWith (+) (edgeFromTo (head $ tail $ stack state) curLine) 1 (edges state))
+              edges = if (length $ tail $ stack state) == 0 then
+--                         trace "same indent; stack empty"
+                        edges state
+                      else
+--                         trace ("same indent; length stack = " ++ (show $ length $ tail $ stack state))
+                        (Map.insertWith (+) (edgeFromTo (head $ tail $ stack state) curLine) 1 (edges state))
             }
   | indent curLine < (indent $ head $ stack state)
     -- outdented
@@ -148,10 +153,17 @@ newState state curLine
     =
 --       trace ("outdented")
       State { stack = (curLine:prevStack),
-              edges = (Map.insertWith (+) (edgeFromTo (head prevStack) curLine) 1 (edges state))
+              edges = if length prevStack == 0 then
+--                         trace "outdent; prevStack empty"
+                        edges state -- No new edge, since the stack is empty
+                      else
+--                         trace ("outdent; length prevStack = " ++ (show $ length prevStack))
+                        (Map.insertWith (+) (edgeFromTo (head prevStack) curLine) 1 (edges state))
             }
-  where prevStack = (dropWhile greaterIndent (stack state)) -- Could use in "==" case?
-        greaterIndent stackLine = (indent curLine) >= (indent stackLine)
+  where prevStack =
+--           trace "computing prevstack"
+          (dropWhile greaterIndent (stack state)) -- Could use in "==" case?
+        greaterIndent stackLine = (indent curLine) <= (indent stackLine) -- Could drop entire stack, returning []
 
 ----------------------------------------------------------------
 edgeFromTo :: IndentedText -> IndentedText -> String

@@ -1,3 +1,2 @@
 a
 b
-Fails. Should produce nothing, but throws exception when 'head' is applied to empty list.
