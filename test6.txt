@@ -1,0 +1,4 @@
+a
+  b
+c
+Fails. Should not produce "b -> c" edge.

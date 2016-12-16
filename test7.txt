@@ -1,0 +1,5 @@
+a
+  b
+    c
+  d
+Fails. Should not produce "c -> d" edge, and SHOULD produce "a -> d" edge.

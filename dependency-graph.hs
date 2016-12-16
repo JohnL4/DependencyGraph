@@ -22,12 +22,13 @@
 --      Repeat for other lines, but if indentation increases, store pair A -> B in hashset.
 --      At end, dump out hashset.
 
--- import Debug.Trace
--- import System.Environment
+import Debug.Trace
+import System.Environment
 -- import System.Console.GetOpt
 -- import Data.Maybe (fromMaybe)
 -- import Data.List.Split
 import Prelude -- hiding (readFile) -- Because we want the System.IO.Strict version
+import System.IO
 -- import System.IO (hPutStr, hPutStrLn, stderr)
 -- import System.IO.Strict
 -- import Control.Monad
@@ -62,7 +63,17 @@ parseLineRegex = "^(.* Information: 0 : Processing )([^ ]*)[ \t]+in (.*)" -- 3su
 
 main :: IO()
 main = do
-  logContents <- getContents
+  args <- getArgs
+  logContents <-
+    if length args == 0
+    then do
+      putStrLn "Reading stdin..."
+      getContents
+    else do
+      putStrLn ("Reading " ++ show (args !! 0) ++ "...")
+      handle <- openFile (args !! 0) ReadMode
+      hGetContents handle
+
   putStrLn $ unlines $ process (map parseIndent $ lines logContents) $ State {stack=[], edges=Map.empty}
 
 -- So, we need a "state" class that contains: a stack of lines, and a set of edges.  When indentation increases, add to
@@ -72,12 +83,14 @@ main = do
 data IndentedText = IndentedText { indent :: Int, -- ^ The indent (expected to be a number of spaces)
                                    text :: String -- ^ The text (expected not to start with a space).
                                  }
+                    deriving (Show)
 
 -- |Internal pgm state
 data State = State { stack :: [IndentedText],     -- ^ A stack of indented log lines, each at a higher indent level than
                                                   -- the previous.  Head is top of stack.
                      edges :: Map.Map String Int  -- ^ A set of edges in form "a -> b" with frequency counts.
                    }
+             deriving (Show)
              
 
 ----------------------------------------------------------------
@@ -91,17 +104,31 @@ parseIndent s =
 ----------------------------------------------------------------
 process :: [IndentedText] -> State -> [String]
 
-process [] state = edgeDump $ Map.assocs $ edges state
+process [] state =
+--   trace "End of input"
+  edgeDump $ Map.assocs $
+--   trace "edges"
+  edges state
 
-process (line:rest) state = process rest $ newState state line  
+process (line:rest) state =
+--   trace ("Processing \"" ++ show line ++ "\"")
+  process rest $ newState state line  
 
 ----------------------------------------------------------------
 newState :: State -> IndentedText -> State
 
 newState state curLine
+  | (length $ stack state) == 0
+    =
+--       trace "Stack is empty"
+      State { stack = [curLine],
+              edges = edges state
+            }
   | indent curLine > (indent $ head $ stack state)
     -- indented
-    = State { stack = (curLine:(stack state)),
+    =
+--       trace ("indented")
+      State { stack = (curLine:(stack state)),
               edges = (Map.insertWith (+) (edgeFromTo (head $ stack state) curLine) 1 (edges state))
             }
   | indent curLine == (indent $ head $ stack state)
@@ -110,13 +137,17 @@ newState state curLine
     --   a <-- prev prev
     --     b <-- prev
     --     c <-- current
-    = State { stack = (curLine:(tail $ stack state)), -- pop one
+    =
+--       trace ("same level")
+      State { stack = (curLine:(tail $ stack state)), -- pop one
               edges = (Map.insertWith (+) (edgeFromTo (head $ tail $ stack state) curLine) 1 (edges state))
             }
   | indent curLine < (indent $ head $ stack state)
     -- outdented
     -- pop to line w/less indent than current, then proceed from there
-    = State { stack = (curLine:prevStack),
+    =
+--       trace ("outdented")
+      State { stack = (curLine:prevStack),
               edges = (Map.insertWith (+) (edgeFromTo (head prevStack) curLine) 1 (edges state))
             }
   where prevStack = (dropWhile greaterIndent (stack state)) -- Could use in "==" case?
@@ -224,6 +255,7 @@ indentLength (_,_,_,subexprs) =
 -- |Returns a list of edges, possibly with comments indicating occurrence counts > 1
 edgeDump :: [(String,Int)]     -- ^ List of (edge,count) tuples
   -> [String]                  -- ^ List of edges, possibly w/comments
+-- edgeDump a | trace ("edgedump " ++ show a) False = undefined
 edgeDump [] = []
 edgeDump ((edge,count):rest)
   | count <= 1  = edge:(edgeDump rest)
