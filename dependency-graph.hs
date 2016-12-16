@@ -139,13 +139,13 @@ newState state curLine
     --     c <-- current
     =
 --       trace ("same level")
-      State { stack = (curLine:(tail $ stack state)), -- pop one
-              edges = if (length $ tail $ stack state) == 0 then
+      State { stack = (curLine:prevStack),
+              edges = if (length prevStack) == 0 then
 --                         trace "same indent; stack empty"
                         edges state
                       else
 --                         trace ("same indent; length stack = " ++ (show $ length $ tail $ stack state))
-                        (Map.insertWith (+) (edgeFromTo (head $ tail $ stack state) curLine) 1 (edges state))
+                        (Map.insertWith (+) (edgeFromTo (head prevStack) curLine) 1 (edges state))
             }
   | indent curLine < (indent $ head $ stack state)
     -- outdented
