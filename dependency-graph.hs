@@ -23,6 +23,7 @@ import Prelude -- hiding (readFile) -- Because we want the System.IO.Strict vers
 import System.IO
 import Text.Regex.TDFA
 import qualified Data.Map.Strict as Map
+import Data.List
 import Data.Map.Strict as Map ((!))
 
 -- See http://stackoverflow.com/q/32149354/370611
@@ -90,7 +91,9 @@ parseIndent s =
 -- |Process the input, keeping track of state while doing so.
 process :: [IndentedText] -> State -> [String]
 
-process [] state = edgeDump $ Map.assocs $ edges state
+process [] state = (edgeDump $ Map.assocs $ edges state)
+  ++ [""]                       -- blank line
+  ++ (nodeDump $ sortBy nodeSort $ Map.assocs $ nodes state)
 
 process (line:rest) state
   | processable =
@@ -182,7 +185,7 @@ fullname aText =
     else error ("Match failed on \"" ++ show aText ++ "\"")
 
 ----------------------------------------------------------------
--- |Returns a list of edges, possibly with comments indicating occurrence counts > 1
+-- |Returns a list of edges as strings, possibly with comments indicating occurrence counts > 1
 edgeDump :: [(Edge,Int)]        -- ^ List of (edge,count) tuples
   -> [String]                   -- ^ List of edges, possibly w/comments
 
@@ -190,9 +193,33 @@ edgeDump :: [(Edge,Int)]        -- ^ List of (edge,count) tuples
 edgeDump [] = []
 
 edgeDump ((edge,count):rest)
-  | count <= 1  = show edge:(edgeDump rest)
-  | otherwise   = (show edge ++ " /* " ++ (show count) ++ " occurrences */"):(edgeDump rest)
+  | count <= 1  = edgeAsString edge:(edgeDump rest)
+  | otherwise   = (edgeAsString edge ++ " [color=red] /* " ++ (show count) ++ " occurrences */"):(edgeDump rest)
 
+----------------------------------------------------------------
+-- |Renders an Edge as a string (but not using Show, since this is a one-way rendering for the purposes of whatever
+-- |external process is going to consume this string.
+edgeAsString :: Edge -> String
+edgeAsString e = from e ++ " -> " ++ to e
+
+----------------------------------------------------------------
+-- |Return a printable list of strings representing the given Map entries (long filename -> abbreviation), in
+-- |abbreviation order.
+nodeDump :: [(String,String)] -> [String]
+nodeDump nodeAbbrevs = map nodeXform nodeAbbrevs
+
+----------------------------------------------------------------
+-- |Printable node representation
+nodeXform :: (String,String) -> String
+nodeXform (long,short) = short ++ " is " ++ long
+
+----------------------------------------------------------------
+nodeSort :: (String,String) -> (String,String) -> Ordering
+nodeSort a b
+  | snd a < snd b = LT
+  | snd a == snd b = EQ
+  | otherwise = GT
+  
 ----------------------------------------------------------------
 first :: (a,b,c,d) -> a
 first (x,_,_,_) = x

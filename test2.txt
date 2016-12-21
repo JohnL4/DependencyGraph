@@ -4,10 +4,13 @@ x Information: 0 : Processing file1 in d\
     x Information: 0 : Processing file3 in d\
   x Information: 0 : Processing file4 in d\
     x Information: 0 : Processing file5 in d\
+    x Information: 0 : Processing file2 in d\
+      x Information: 0 : Processing file3 in d\
 
 Should yield:
 
 d\file1 -> d\file2
-d\file2 -> d\file3
+d\file2 -> d\file3 (two times)
 d\file1 -> d\file4
 d\file4 -> d\file5
+d\file4 -> d\file2
