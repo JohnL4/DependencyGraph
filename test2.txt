@@ -1,13 +1,13 @@
-x Information: 0 : Processing f1 in d\
-  x Information: 0 : Processing f2 in d\
-  x Information: 0 : Adding f3 in d\
-    x Information: 0 : Processing f3 in d\
-  x Information: 0 : Processing f4 in d\
-    x Information: 0 : Processing f5 in d\
+x Information: 0 : Processing file1 in d\
+  x Information: 0 : Processing file2 in d\
+  x Information: 0 : Adding file3 in d\
+    x Information: 0 : Processing file3 in d\
+  x Information: 0 : Processing file4 in d\
+    x Information: 0 : Processing file5 in d\
 
 Should yield:
 
-d\f1 -> d\f2
-d\f2 -> d\f3
-d\f1 -> d\f4
-d\f4 -> d\f5
+d\file1 -> d\file2
+d\file2 -> d\file3
+d\file1 -> d\file4
+d\file4 -> d\file5

@@ -17,11 +17,13 @@
 --
 -- (Need to skip the line containing "Adding", and only process the ones containing "Processing".)
 
+import Debug.Trace
 import System.Environment
 import Prelude -- hiding (readFile) -- Because we want the System.IO.Strict version
 import System.IO
 import Text.Regex.TDFA
 import qualified Data.Map.Strict as Map
+import Data.Map.Strict as Map ((!))
 
 -- See http://stackoverflow.com/q/32149354/370611
 -- toRegex = makeRegexOpts defaultCompOpt{multiline=False} defaultExecOpt
@@ -51,7 +53,7 @@ main = do
       handle <- openFile (args !! 0) ReadMode
       hGetContents handle
 
-  putStrLn $ unlines $ process (map parseIndent $ lines logContents) $ State {stack=[], edges=Map.empty}
+  putStrLn $ unlines $ process (map parseIndent $ lines logContents) $ State {stack=[], edges=Map.empty, nodes=Map.empty}
 
 -- |A line of indented text.
 data IndentedText = IndentedText { indent :: Int, -- ^ The indent (expected to be a number of spaces)
@@ -59,10 +61,17 @@ data IndentedText = IndentedText { indent :: Int, -- ^ The indent (expected to b
                                  }
                     deriving (Show)
 
+-- |An edge
+data Edge = Edge { from :: String,
+                   to :: String
+                 }
+            deriving (Show, Ord, Eq)
+
 -- |Internal pgm state
-data State = State { stack :: [IndentedText],     -- ^ A stack of indented log lines, each at a higher indent level than
-                                                  -- ^ the previous.  Head is top of stack.
-                     edges :: Map.Map String Int  -- ^ A set of edges in form "a -> b" with frequency counts.
+data State = State { stack :: [IndentedText], -- ^ A stack of indented log lines, each at a higher indent level than the
+                                              -- ^ previous.  Head is top of stack.
+                     edges :: Map.Map Edge Int, -- ^ A set of edges with frequency counts.  Node names will be abbreviated.
+                     nodes :: Map.Map String String -- ^ A map from long filepath to abbreviation
                    }
              deriving (Show)
              
@@ -83,7 +92,15 @@ process :: [IndentedText] -> State -> [String]
 
 process [] state = edgeDump $ Map.assocs $ edges state
 
-process (line:rest) state = process rest $ newState state line  
+process (line:rest) state
+  | processable =
+    trace "Processing line"
+    process rest $ newState state line
+  | otherwise =
+    trace "Skipping line"
+    process rest state -- Unprocessable line ==> continue, no state change
+  where processable = text line =~ parseLineRegex :: Bool
+
 
 ----------------------------------------------------------------
 -- |Update state while processing. Input (IndentedText) is a line from the log being processed.
@@ -93,60 +110,88 @@ newState state curLine
   | (length $ stack state) == 0 =
       -- initial state
       State { stack = [curLine],
-              edges = edges state -- no change
+              edges = Map.empty,
+              nodes = Map.singleton (fullname $ text curLine) "f0"
             }
   | indent curLine > (indent $ head $ stack state) =
       -- indented
       State { stack = (curLine:(stack state)),
-              edges = (Map.insertWith (+) (edgeFromTo (head $ stack state) curLine) 1 (edges state))
+              edges = (Map.insertWith (+) (edgeFromTo (head $ stack state) curLine nnmap) 1 (edges state)),
+              nodes = nnmap
             }
   | indent curLine == (indent $ head $ stack state) =
       -- same level
       State { stack = (curLine:prevStack),
               edges = if (length prevStack) == 0 then
---                         trace "same indent; stack empty"
                         edges state
                       else
---                         trace ("same indent; length stack = " ++ (show $ length prevStack))
-                        (Map.insertWith (+) (edgeFromTo (head prevStack) curLine) 1 (edges state))
+                        (Map.insertWith (+) (edgeFromTo (head prevStack) curLine nnmap) 1 (edges state)),
+              nodes = nnmap
             }
   | indent curLine < (indent $ head $ stack state) =
       -- outdented
       State { stack = (curLine:prevStack),
               edges = if length prevStack == 0 then
---                         trace "outdent; prevStack empty"
                         edges state -- No new edge, since the stack is empty
                       else
---                         trace ("outdent; length prevStack = " ++ (show $ length prevStack))
-                        (Map.insertWith (+) (edgeFromTo (head prevStack) curLine) 1 (edges state))
+                        (Map.insertWith (+) (edgeFromTo (head prevStack) curLine nnmap) 1 (edges state)),
+              nodes = nnmap
             }
   where prevStack =
           -- Unwind the stack to where its top corresponds to a line with smaller indent than the current line.
---           trace "computing prevstack"
           (dropWhile greaterIndent (stack state)) -- Could use in "==" case?
         greaterIndent stackLine = (indent stackLine) >= (indent curLine) -- Could drop entire stack, returning []
+        nnmap = newNodesMap (nodes state) curLine
 
 ----------------------------------------------------------------
-edgeFromTo :: IndentedText -> IndentedText -> String
+-- |Returns a new nodes map which is the old nodes map, possibly with a new node inserted from the IndentedText argument.
+newNodesMap :: Map.Map String String -- ^ Old nodes map
+  -> IndentedText                    -- ^ Possible source of new node
+  -> Map.Map String String           -- ^ New nodes map
 
-edgeFromTo from to = (text from) ++ " -> " ++ (text to)
+newNodesMap aMap indText
+  | Map.member key aMap =
+    trace ("Abbrev already exists for key " ++ show key)
+    aMap
+  | otherwise =
+    trace ("Inserting new node abbrev f" ++ (show $ Map.size aMap) ++ " for " ++ show key)
+    Map.insert key ("f" ++ (show $ Map.size aMap)) aMap
+  where key = fullname $ text indText
+  
+----------------------------------------------------------------
+-- |Returns an "abbreviated edge" in which long filenames generated from the passed IndentedText are replaced with
+-- |abbreviations from the given map.
+edgeFromTo :: IndentedText -> IndentedText -> Map.Map String String -> Edge
+
+-- edgeFromTo f t m | trace ("edgeFrom " ++ show f ++ " " ++ show t ++ " " ++ show m) False = undefined
+edgeFromTo aFrom aTo aMap = Edge { from = (aMap ! (fullname $ text aFrom)),
+                                   to = (aMap ! (fullname $ text aTo))
+                                 }
 
 ----------------------------------------------------------------
-fullname :: (String,String,String,[String]) -> String
+-- fullname :: (String,String,String,[String]) -> String
+-- fullname (_,_,_,[_,fileName,directoryName]) = directoryName ++ fileName
 
-fullname (_,_,_,[_,fileName,directoryName]) = directoryName ++ fileName
+-- |Return full filename from given string matching parseLineRegex
+fullname :: String -> String
+fullname aText =
+  let matchv = fourth $ (aText =~ parseLineRegex :: (String,String,String,[String]))
+  in
+    if length matchv == 3
+    then (matchv !! 2) ++ (matchv !! 1)
+    else error ("Match failed on \"" ++ show aText ++ "\"")
 
 ----------------------------------------------------------------
 -- |Returns a list of edges, possibly with comments indicating occurrence counts > 1
-edgeDump :: [(String,Int)]     -- ^ List of (edge,count) tuples
-  -> [String]                  -- ^ List of edges, possibly w/comments
+edgeDump :: [(Edge,Int)]        -- ^ List of (edge,count) tuples
+  -> [String]                   -- ^ List of edges, possibly w/comments
 
 -- edgeDump a | trace ("edgedump " ++ show a) False = undefined
 edgeDump [] = []
 
 edgeDump ((edge,count):rest)
-  | count <= 1  = edge:(edgeDump rest)
-  | otherwise   = (edge ++ " /* " ++ (show count) ++ " occurrences */"):(edgeDump rest)
+  | count <= 1  = show edge:(edgeDump rest)
+  | otherwise   = (show edge ++ " /* " ++ (show count) ++ " occurrences */"):(edgeDump rest)
 
 ----------------------------------------------------------------
 first :: (a,b,c,d) -> a
